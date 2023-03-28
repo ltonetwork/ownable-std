@@ -1,4 +1,5 @@
-use cosmwasm_std::{Addr, Api, BlockInfo, CanonicalAddr, ContractInfo, Empty, Env, MemoryStorage, OwnedDeps, Querier, RecoverPubkeyError, StdError, StdResult, Timestamp, VerificationError, Order, Storage};
+use cosmwasm_std::{Addr, Api, BlockInfo, CanonicalAddr, ContractInfo, Empty, Env, MemoryStorage, OwnedDeps, Querier, RecoverPubkeyError, StdError, StdResult, Timestamp, VerificationError, Order, Storage, Uint128};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::HashMap;
@@ -321,4 +322,51 @@ impl Querier for EmptyQuerier {
     fn raw_query(&self, _bin_request: &[u8]) -> cosmwasm_std::QuerierResult {
         todo!()
     }
+}
+
+// from github.com/CosmWasm/cw-nfts/blob/main/contracts/cw721-metadata-onchain
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug, Default)]
+pub struct Metadata {
+    pub image: Option<String>,
+    pub image_data: Option<String>,
+    pub external_url: Option<String>,
+    pub description: Option<String>,
+    pub name: Option<String>,
+    // pub attributes: Option<Vec<Trait>>,
+    pub background_color: Option<String>,
+    pub animation_url: Option<String>,
+    pub youtube_url: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+#[serde(rename_all = "snake_case")]
+pub struct ExternalEventMsg {
+    // CAIP-2 format: <namespace + ":" + reference>
+    // e.g. ethereum: eip155:1
+    pub chain_id: String,
+    pub event_type: String,
+    pub args: HashMap<String, String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct OwnableInfo {
+    pub owner: Addr,
+    pub issuer: Addr,
+    pub ownable_type: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct NFT {
+    pub network: String,    // eip155:1
+    pub id: Uint128,
+    pub address: String, // 0x341...
+    pub lock_service: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct InfoResponse {
+    pub owner: Addr,
+    pub issuer: Addr,
+    pub nft: Option<NFT>,
+    pub ownable_type: Option<String>,
 }

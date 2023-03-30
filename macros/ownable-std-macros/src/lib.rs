@@ -18,6 +18,7 @@ pub fn ownables_std_execute_msg(metadata: TokenStream, input: TokenStream) -> To
         enum ExecuteMsg { 
             Transfer {to: Addr},
             Lock {},
+            Consume {},
         }
     }
     .into();
@@ -39,3 +40,49 @@ pub fn ownables_std_execute_msg(metadata: TokenStream, input: TokenStream) -> To
 
     quote! { #input_variants }.into()
 }
+
+#[proc_macro_attribute]
+pub fn ownables_std_query_msg(metadata: TokenStream, input: TokenStream) -> TokenStream {
+   
+    // validate no input args
+    let args = parse_macro_input!(metadata as AttributeArgs);
+    if let Some(arg) = args.first() {
+        return syn::Error::new_spanned(arg, "no args expected")
+            .to_compile_error()
+            .into();
+    }
+
+    // define the variants to be inserted and parse into DataEnum
+    let default_query_variants: TokenStream = quote! {
+        enum QueryMsg { 
+            GetInfo {},
+            GetMetadata {},
+            GetWidgetState {},
+            IsLocked {},
+            IsConsumerOf {
+                issuer: Addr,
+                consumable_type: String,
+            },
+        }
+    }
+    .into();
+    let default_variants_input: DeriveInput = parse_macro_input!(default_query_variants);
+    let default_variants = match default_variants_input.data {
+        Enum(DataEnum { variants, .. }) => variants,
+        _ => panic!("only enums can provide variants"),
+    };
+
+    // parse the input variants
+    let mut input_variants: DeriveInput = parse_macro_input!(input);
+    let input_variants_data = match &mut input_variants.data {
+        Enum(DataEnum { variants, .. }) => variants,
+        _ => panic!("only enums can accept variants")
+    };
+
+    // insert variants from the right to the left
+    input_variants_data.extend(default_variants.into_iter());
+
+    quote! { #input_variants }.into()
+}
+
+

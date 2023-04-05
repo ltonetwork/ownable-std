@@ -343,9 +343,9 @@ pub struct Metadata {
 pub struct ExternalEventMsg {
     // CAIP-2 format: <namespace + ":" + reference>
     // e.g. ethereum: eip155:1
-    pub chain_id: String,
+    pub network: Option<String>,
     pub event_type: String,
-    pub args: HashMap<String, String>,
+    pub attributes: HashMap<String, String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

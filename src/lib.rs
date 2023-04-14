@@ -1,7 +1,8 @@
-use cosmwasm_std::{Addr, Api, BlockInfo, CanonicalAddr, ContractInfo, Empty, Env, MemoryStorage, OwnedDeps, Querier, RecoverPubkeyError, StdError, StdResult, Timestamp, VerificationError, Order, Storage, Uint128};
+use cosmwasm_std::{Addr, Api, BlockInfo, CanonicalAddr, ContractInfo, Empty, Env, MemoryStorage, OwnedDeps, Querier, RecoverPubkeyError, StdError, StdResult, Timestamp, VerificationError, Order, Storage, Uint128, Response};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use wasm_bindgen::{JsValue, JsError};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use blake2::Blake2bVar;
@@ -159,6 +160,36 @@ fn secure_hash(m: &[u8]) -> Vec<u8> {
     // hasher.update(&buf);
     // let mut buf = hasher.finalize();
     res.to_vec()
+}
+
+fn get_random_color(hash: String) -> String {
+    let (red, green, blue) = derive_rgb_values(hash);
+    rgb_hex(red, green, blue)
+}
+
+fn derive_rgb_values(hash: String) -> (u8, u8, u8) {
+    let mut decoded_hash = bs58::decode(&hash).into_vec().unwrap();
+    decoded_hash.reverse();
+    (decoded_hash[0], decoded_hash[1], decoded_hash[2])
+}
+
+fn rgb_hex(r: u8, g: u8, b: u8) -> String {
+    format!("#{:02X}{:02X}{:02X}", r, g, b)
+}
+
+fn get_json_response(storage: MemoryStorage, response: Response) -> Result<JsValue, JsError> {
+    let state_dump= IdbStateDump::from(storage);
+    let ownable_state = to_string(&response)?;
+    let response_map = js_sys::Map::new();
+    response_map.set(
+        &JsValue::from_str("mem"),
+        &JsValue::from(serde_json::to_string(&state_dump)?)
+    );
+    response_map.set(
+        &JsValue::from_str("result"),
+        &JsValue::from(ownable_state)
+    );
+    Ok(JsValue::from(response_map))
 }
 
 pub struct IdbStorage {

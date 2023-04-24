@@ -48,7 +48,9 @@ pub fn load_lto_deps(state_dump: Option<IdbStateDump>) -> OwnedDeps<MemoryStorag
 
 }
 
-/// takes a b58 of compressed secp256k1 pk
+/// takes a b58 of compressed secp256k1 public key and returns an address.
+/// performs validation on the pk, including length checks, bs58 decoding,
+/// compression check. also does eip55 checksum validation.
 pub fn address_eip155(public_key: String) -> Result<Addr, StdError> {
     if public_key.is_empty() {
         return Err(StdError::not_found("empty input"));
@@ -110,6 +112,10 @@ fn eip_55_checksum(addr: &str) -> String {
     checksum_buff
 }
 
+/// takes a network_id (T/L) and a b58 encoded public key and
+/// returns a base58 encoded address.
+/// performs validations on the network_id, public key encoding,
+/// and expects sha256(Blake2b(data)) to process correctly.
 pub fn address_lto(network_id: char, public_key: String) -> Result<Addr, StdError> {
     if network_id != 'L' && network_id != 'T' {
         return Err(StdError::generic_err("unrecognized network_id"));
@@ -163,28 +169,35 @@ fn secure_hash(m: &[u8]) -> Vec<u8> {
     res.to_vec()
 }
 
+/// returns a hex color in string format from a hash
 pub fn get_random_color(hash: String) -> String {
     let (red, green, blue) = derive_rgb_values(hash);
     rgb_hex(red, green, blue)
 }
 
+/// takes a b58 hash and derives a seemingly-random rgb tuple
 pub fn derive_rgb_values(hash: String) -> (u8, u8, u8) {
     let mut decoded_hash = bs58::decode(&hash).into_vec().unwrap();
     decoded_hash.reverse();
     (decoded_hash[0], decoded_hash[1], decoded_hash[2])
 }
 
+/// takes three u8 values representing rgb values (0-255)
+/// and returns a hex string
 pub fn rgb_hex(r: u8, g: u8, b: u8) -> String {
     format!("#{:02X}{:02X}{:02X}", r, g, b)
 }
 
+/// takes a cw MemoryStorage and Response and returns a JsValue
+/// response that contains the memory state dump and response
+/// result
 pub fn get_json_response(storage: MemoryStorage, response: Response) -> Result<JsValue, JsError> {
     let state_dump= IdbStateDump::from(storage);
     let ownable_state = to_string(&response)?;
     let response_map = js_sys::Map::new();
     response_map.set(
         &JsValue::from_str("mem"),
-        &JsValue::from(serde_json::to_string(&state_dump)?)
+        &JsValue::from(to_string(&state_dump)?)
     );
     response_map.set(
         &JsValue::from_str("result"),
@@ -206,6 +219,7 @@ impl IdbStorage {
         store
     }
 
+    /// takes a IdbStateDump and loads the values into MemoryStorage
     pub fn load_to_mem_storage(&mut self, idb_state: IdbStateDump) {
         for (k, v) in idb_state.state_dump.into_iter() {
             self.storage.set(&k, &v);
@@ -222,6 +236,7 @@ pub struct IdbStateDump {
 }
 
 impl IdbStateDump {
+    /// generates a state dump from all key-value pairs in MemoryStorage
     pub fn from(store: MemoryStorage) -> IdbStateDump {
         let mut state: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
 

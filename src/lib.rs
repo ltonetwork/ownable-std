@@ -3,22 +3,18 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::to_string;
 use serde_with::serde_as;
-use wasm_bindgen::{JsValue, JsError};
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use blake2::Blake2bVar;
-use blake2::digest::{Update, VariableOutput};
-use sha2::Digest as Sha2Digest;
-use sha3::{Digest};
+use wasm_bindgen::{JsValue, JsError};
 
 const CANONICAL_LENGTH: usize = 54;
 
-pub fn create_lto_env() -> Env {
+pub fn create_env(chain_id: impl Into<String>, time: Option<Timestamp>) -> Env {
     Env {
         block: BlockInfo {
             height: 0,
-            time: Timestamp::from_seconds(0),
-            chain_id: "lto".to_string(),
+            time: time.unwrap_or_else(|| Timestamp::from_seconds(0)),
+            chain_id: chain_id.into(),
         },
         contract: ContractInfo {
             address: Addr::unchecked(""),
@@ -27,7 +23,7 @@ pub fn create_lto_env() -> Env {
     }
 }
 
-pub fn load_lto_deps(state_dump: Option<IdbStateDump>) -> OwnedDeps<MemoryStorage, EmptyApi, EmptyQuerier, Empty> {
+pub fn load_owned_deps(state_dump: Option<IdbStateDump>) -> OwnedDeps<MemoryStorage, EmptyApi, EmptyQuerier, Empty> {
     match state_dump {
         None => OwnedDeps {
             storage: MemoryStorage::default(),
@@ -45,128 +41,6 @@ pub fn load_lto_deps(state_dump: Option<IdbStateDump>) -> OwnedDeps<MemoryStorag
             }
         }
     }
-
-}
-
-/// takes a b58 of compressed secp256k1 public key and returns an address.
-/// performs validation on the pk, including length checks, bs58 decoding,
-/// compression check. also does eip55 checksum validation.
-pub fn address_eip155(public_key: String) -> Result<Addr, StdError> {
-    if public_key.is_empty() {
-        return Err(StdError::not_found("empty input"));
-    }
-
-    // decode b58 pk
-    let pk = bs58::decode(public_key.as_bytes()).into_vec();
-    let decoded_pk = match pk {
-        Ok(pk) => pk,
-        Err(e) => return Err(StdError::generic_err(e.to_string())),
-    };
-
-    // instantiate secp256k1 public key from input
-    let public_key = secp256k1::PublicKey::from_slice(decoded_pk.as_slice()).unwrap();
-    let mut uncompressed_hex_pk = hex::encode(public_key.serialize_uncompressed());
-    if uncompressed_hex_pk.starts_with("04") {
-        uncompressed_hex_pk = uncompressed_hex_pk.split_off(2);
-    }
-
-    // pass the raw bytes to keccak256
-    let uncompressed_raw_pk = hex::decode(uncompressed_hex_pk).unwrap();
-
-    let mut hasher = sha3::Keccak256::new();
-    hasher.input(uncompressed_raw_pk.as_slice());
-    let hashed_addr = hex::encode(hasher.result().as_slice()).to_string();
-
-    let result = &hashed_addr[hashed_addr.len() - 40..];
-    let checksum_addr = "0x".to_owned() + eip_55_checksum(result).as_str();
-
-    Ok(Addr::unchecked(checksum_addr))
-}
-
-fn eip_55_checksum(addr: &str) -> String {
-    let mut checksum_hasher = sha3::Keccak256::new();
-    checksum_hasher.input(&addr[addr.len() - 40..].as_bytes());
-    let hashed_addr = hex::encode(checksum_hasher.result()).to_string();
-
-    let mut checksum_buff = "".to_owned();
-    let result_chars: Vec<char> = addr.chars()
-        .into_iter()
-        .collect();
-    let keccak_chars: Vec<char> = hashed_addr.chars()
-        .into_iter()
-        .collect();
-    for i in 0..addr.len() {
-        let mut char = result_chars[i];
-        if char.is_alphabetic() {
-            let keccak_digit = keccak_chars[i]
-                .to_digit(16)
-                .unwrap();
-            // if the corresponding hex digit >= 8, convert to uppercase
-            if keccak_digit >= 8 {
-                char = char.to_ascii_uppercase();
-            }
-        }
-        checksum_buff += char.to_string().as_str();
-    }
-
-    checksum_buff
-}
-
-/// takes a network_id (T/L) and a b58 encoded public key and
-/// returns a base58 encoded address.
-/// performs validations on the network_id, public key encoding,
-/// and expects sha256(Blake2b(data)) to process correctly.
-pub fn address_lto(network_id: char, public_key: String) -> Result<Addr, StdError> {
-    if network_id != 'L' && network_id != 'T' {
-        return Err(StdError::generic_err("unrecognized network_id"));
-    }
-    if bs58::decode(public_key.clone()).into_vec().is_err() {
-        return Err(StdError::generic_err("invalid public key"));
-    }
-
-    // decode b58 of pubkey into byte array
-    let public_key = bs58::decode(public_key).into_vec().unwrap();
-    // get the ascii value from network char
-    let network_id = network_id as u8;
-    let pub_key_secure_hash = secure_hash(public_key.as_slice());
-    // get the first 20 bytes of the securehash
-    let address_bytes = &pub_key_secure_hash[0..20];
-    let version = &1_u8.to_be_bytes();
-    let checksum_input:Vec<u8> = [version, &[network_id], address_bytes].concat();
-
-    // checksum is the first 4 bytes of secureHash of version, chain_id, and hash
-    let checksum = &secure_hash(checksum_input.as_slice())
-        .to_vec()[0..4];
-
-    let addr_fields = [
-        version,
-        &[network_id],
-        address_bytes,
-        checksum
-    ];
-
-    let address: Vec<u8> = addr_fields.concat();
-    Ok(Addr::unchecked(base58(address.as_slice())))
-}
-
-fn base58(input: &[u8]) -> String {
-    bs58::encode(input).into_string()
-}
-
-fn secure_hash(m: &[u8]) -> Vec<u8> {
-    let mut hasher = Blake2bVar::new(32).unwrap();
-    hasher.update(m);
-    let mut buf = [0u8; 32];
-    hasher.finalize_variable(&mut buf).unwrap();
-
-    // get the sha256 of blake
-    let mut sha256_hasher = sha2::Sha256::new();
-    Update::update(&mut sha256_hasher, buf.as_slice());
-    let res = sha256_hasher.finalize();
-    // let mut hasher = sha2::Sha256::new();
-    // hasher.update(&buf);
-    // let mut buf = hasher.finalize();
-    res.to_vec()
 }
 
 /// returns a hex color in string format from a hash

@@ -9,7 +9,11 @@ use wasm_bindgen::{JsValue, JsError};
 
 const CANONICAL_LENGTH: usize = 54;
 
-pub fn create_env(chain_id: impl Into<String>, time: Option<Timestamp>) -> Env {
+pub fn create_env() -> Env {
+    create_ownable_env(String::new(), None)
+}
+
+pub fn create_ownable_env(chain_id: impl Into<String>, time: Option<Timestamp>) -> Env {
     Env {
         block: BlockInfo {
             height: 0,

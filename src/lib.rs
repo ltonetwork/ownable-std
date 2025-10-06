@@ -53,14 +53,28 @@ pub fn get_random_color(hash: String) -> String {
     rgb_hex(red, green, blue)
 }
 
-/// takes a b58 hash and derives a seemingly-random rgb tuple
+
+/// takes a hex-encoded hash and derives a seemingly-random rgb tuple
 pub fn derive_rgb_values(hash: String) -> (u8, u8, u8) {
-    let mut decoded_hash = bs58::decode(&hash).into_vec().unwrap();
-    decoded_hash.reverse();
-    (decoded_hash[0], decoded_hash[1], decoded_hash[2])
+    // allow optional 0x and odd length
+    let mut s = hash.trim().trim_start_matches("0x").to_string();
+    if s.len() % 2 == 1 {
+        s.insert(0, '0');
+    }
+
+    match hex::decode(&s) {
+        Ok(mut bytes) => {
+            bytes.reverse();
+            let r = *bytes.get(0).unwrap_or(&0);
+            let g = *bytes.get(1).unwrap_or(&0);
+            let b = *bytes.get(2).unwrap_or(&0);
+            (r, g, b)
+        }
+        Err(_) => (0, 0, 0),
+    }
 }
 
-/// takes three u8 values representing rgb values (0-255)
+/// takes three u8 values representing rgb values (0-255)f
 /// and returns a hex string
 pub fn rgb_hex(r: u8, g: u8, b: u8) -> String {
     format!("#{:02X}{:02X}{:02X}", r, g, b)
